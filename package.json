@@ -1,0 +1,21 @@
+{
+  "name": "portr",
+  "version": "1.0.0",
+  "description": "Kill whatever is on your port. List, kill, check, and watch ports from the terminal.",
+  "type": "module",
+  "bin": { "portr": "./src/index.js" },
+  "engines": { "node": ">=18.0.0" },
+  "keywords": ["port","kill","process","cli","devtools","lsof","network"],
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "files": ["src/"],
+  "dependencies": {
+    "chalk": "^5.3.0",
+    "commander": "^12.0.0"
+  },
+  "devDependencies": {
+    "vitest": "^1.0.0"
+  }
+}
