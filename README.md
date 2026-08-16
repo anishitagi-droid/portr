@@ -2,7 +2,6 @@
 
 **Kill whatever is on your port.**
 
-[![npm](https://img.shields.io/npm/v/portr)](https://npmjs.com/package/portr)
 [![CI](https://github.com/anishitagi-droid/portr/actions/workflows/ci.yml/badge.svg)](https://github.com/anishitagi-droid/portr/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Node >=18](https://img.shields.io/badge/node-%3E%3D18-brightgreen)](package.json)
@@ -28,14 +27,21 @@ $ portr
 
 ## Install
 
+Not published to npm yet — the name `portr` is already taken by an
+unrelated package, so publishing needs a different name first. For now,
+run it from a local clone:
+
 ```bash
-npm install -g portr
+git clone https://github.com/anishitagi-droid/portr.git
+cd portr
+npm install
+npm link          # puts `portr` on your PATH, pointing at this clone
 ```
 
-Or without installing:
+Or run it directly without linking:
 
 ```bash
-npx portr kill 3000
+node src/index.js kill 3000
 ```
 
 ---
@@ -174,7 +180,7 @@ Every command has consistent, predictable exit codes:
 |---|---|---|
 | macOS | `lsof` | Never tested against a real macOS machine — only Linux has actually been exercised. The `lsof` parser is unit-tested against fixtures shaped like documented `lsof` output, same caveat as Windows below, just less severe since the format is simpler and better understood. |
 | Linux | `ss` (preferred) | Tested. Requires `iproute2` (present on most distros by default). |
-| Linux fallback | `/proc/net/tcp` | Tested. Zero dependencies, but cannot resolve PIDs in restricted environments (e.g. containers without `/proc/*/fd` access) — ports will show but PID/process name will be blank. |
+| Linux fallback | `/proc/net/tcp` | Tested, including PID resolution. Zero dependencies. As with `ss`/`lsof`, PID resolution still depends on process ownership — see the note below. |
 | Windows | — | **Not supported.** `assertSupported()` refuses to run on `win32`. There's a draft `netstat -ano` parser in `src/core/windows.js` that has never been run on a real Windows machine — see that file's header for exactly what would need verifying before it should be trusted. Use Task Manager or `netstat -ano` directly for now. |
 
 ### A real limitation worth knowing about, on any platform
