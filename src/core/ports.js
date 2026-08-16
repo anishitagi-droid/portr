@@ -17,8 +17,8 @@
  * with the resulting array.
  */
 
-import { execSync, execFileSync } from 'child_process';
-import { readFileSync } from 'fs';
+import { execFileSync } from 'child_process';
+import { readFileSync, readdirSync, readlinkSync } from 'fs';
 import { getPortTool } from './platform.js';
 
 // ── lsof parser ──────────────────────────────────────────────────────────────
@@ -120,7 +120,7 @@ function parseSs(stdout, proto = 'tcp') {
 // ── /proc/net/tcp fallback ───────────────────────────────────────────────────
 // Hex-encoded: sl local_address rem_address st tx_queue:rx_queue tr:tm->when retrnsmt uid timeout inode
 // 0A = 10 decimal for state (LISTEN)
-function parseProcNet(proto = 'tcp') {
+function parseProcNet(proto = 'tcp', inodeMap) {
   const entries = [];
   const file = proto === 'udp' ? '/proc/net/udp' : '/proc/net/tcp';
 
@@ -151,7 +151,7 @@ function parseProcNet(proto = 'tcp') {
 
     // Look up PID via inode — expensive but necessary
     const inode = parseInt(parts[9], 10);
-    const pid   = inodeToPin(inode);
+    const pid   = inodeMap.get(inode) ?? null;
     const name  = pid ? processName(pid) : '';
 
     entries.push({ port, pid, protocol: proto, state: 'LISTEN', address: addr, name, cmd: name });
@@ -159,20 +159,58 @@ function parseProcNet(proto = 'tcp') {
   return entries;
 }
 
-// Cache inode→pid lookups across calls within one run
-const _inodeCache = new Map();
-function inodeToPin(inode) {
-  if (_inodeCache.has(inode)) return _inodeCache.get(inode);
+/**
+ * Build a map of socket inode -> owning PID by walking /proc/<pid>/fd for
+ * every process and reading each fd's symlink target.
+ *
+ * This used to shell out to `grep -r "socket:[N]"` over every `/proc/<pid>/fd`.
+ * That never actually worked: entries under /proc/<pid>/fd/* are symlinks,
+ * and GNU grep's -r does not dereference symlinks encountered during
+ * recursion (only explicit command-line arguments, or -R, get dereferenced
+ * -- and -R is unsafe here since some fds are pipes/sockets that block on
+ * read). The grep always silently matched nothing, inodeToPin always
+ * returned null, and every /proc fallback lookup reported "no PID found" --
+ * invisibly, since the caller just sees pid: null and treats it the same
+ * as a permission-restricted port. This is the only lookup path used when
+ * neither `ss` nor `lsof` is on PATH, which is precisely the minimal-image
+ * case (Alpine/distroless dev containers) this fallback exists for, so the
+ * fallback was non-functional in exactly the environment it was written
+ * for -- and every CI runner has `ss`, so the test suite never exercised
+ * this path and never caught it.
+ *
+ * Fixed by walking /proc directly with readdirSync/readlinkSync instead of
+ * spawning a subprocess per inode. Skips any PID whose /proc/<pid>/fd can't
+ * be read (EACCES for another user's process, ENOENT if it exited mid-scan)
+ * rather than failing the whole lookup.
+ */
+export function buildInodeToPidMap() {
+  const map = new Map();
+  let pids;
   try {
-    const result = execSync(
-      `grep -r "socket:\\[${inode}\\]" /proc/*/fd 2>/dev/null | head -1`,
-      { encoding: 'utf8', stdio: ['pipe','pipe','ignore'] }
-    ).trim();
-    const m = result.match(/\/proc\/(\d+)\//);
-    const pid = m ? parseInt(m[1], 10) : null;
-    _inodeCache.set(inode, pid);
-    return pid;
-  } catch { return null; }
+    pids = readdirSync('/proc').filter(name => /^\d+$/.test(name));
+  } catch {
+    return map;
+  }
+
+  for (const pid of pids) {
+    let fds;
+    try {
+      fds = readdirSync(`/proc/${pid}/fd`);
+    } catch {
+      continue; // not our process, or it exited between readdir and here
+    }
+    for (const fd of fds) {
+      let target;
+      try {
+        target = readlinkSync(`/proc/${pid}/fd/${fd}`);
+      } catch {
+        continue;
+      }
+      const m = target.match(/^socket:\[(\d+)\]$/);
+      if (m) map.set(parseInt(m[1], 10), parseInt(pid, 10));
+    }
+  }
+  return map;
 }
 
 function processName(pid) {
@@ -218,8 +256,9 @@ export function getListeningPorts({ udp = false, port = null } = {}) {
       }
     } else {
       // /proc fallback
-      entries = parseProcNet('tcp');
-      if (udp) entries.push(...parseProcNet('udp'));
+      const inodeMap = buildInodeToPidMap();
+      entries = parseProcNet('tcp', inodeMap);
+      if (udp) entries.push(...parseProcNet('udp', inodeMap));
     }
   } catch (err) {
     throw new Error(`Failed to list ports: ${err.message}`);
