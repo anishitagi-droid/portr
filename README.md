@@ -207,4 +207,4 @@ Whether you can see a process's PID depends on whether you own that process (or 
 
 ## License
 
-MIT © [anishitagi-droid](https://github.com/anishitagi-droid)
+MIT — see [LICENSE](LICENSE).
