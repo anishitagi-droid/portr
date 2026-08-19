@@ -8,7 +8,14 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        node: ['18', '20', '22']
+        # portr itself supports Node >=18 (see package.json engines) --
+        # this matrix is narrower because vitest 4's own engines field is
+        # ^20.0.0 || ^22.0.0 || >=24.0.0, and CI runs the test suite, not
+        # just portr itself. Node 18 was in this matrix and failing before
+        # this comment existed; verified vitest's actual requirement
+        # directly (node_modules/vitest/package.json) rather than guessing
+        # after the first attempt at this got it wrong.
+        node: ['20', '22', '24']
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
